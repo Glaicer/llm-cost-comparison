@@ -238,18 +238,25 @@ function shares(r, h) {
 }
 const blendedPrice = (w, p) => w.fresh * p.in + w.out * p.out + w.cache * p.cache; // $ per 1M tokens
 const tokensFor = (budget, blended) => blended > 0 ? budget * 1e6 / blended : Infinity;
+
+// Session from shape: total T, fresh:output ratio r, cache hit h over the input side.
+function fromShape(T, r, h) {
+  const out = T * (1 - h) / (r + 1 - h);
+  const side = T - out;
+  return { fresh: side * (1 - h), out, cache: side * h };
+}
 // MATH-END
 
 const $ = id => document.getElementById(id);
 const fmtInt = v => Math.round(v).toLocaleString('en-US');
-const fmtRatio = r => r < 0.005 ? '0' : r.toLocaleString('en-US', { maximumFractionDigits: 2 });
+const fmtRatio = r => r < 0.005 ? '0' : r.toLocaleString('en-US', { maximumFractionDigits: 2, useGrouping: false });
 function fmtMoney(v) {
   if (v >= 0.01) return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (v >= 1e-4) return '$' + v.toFixed(4);
   return '$' + v.toExponential(2);
 }
 
-let state = { fresh: 136074, out: 20595, cache: 6379136 };
+let state = fromShape(10e6, 7.5, 0.985); // 10M tokens, 7.5:1 input:output, 98.5% cache hit
 
 function render() {
   const T = total(state), h = cacheHitOf(state), r = ratioOf(state);
@@ -267,6 +274,7 @@ function render() {
   $('amount').textContent = fmtMoney(costOf(state, p));
   $('breakdown').textContent =
     `input ${fmtMoney(state.fresh * p.in / 1e6)} \u00b7 output ${fmtMoney(state.out * p.out / 1e6)} \u00b7 cache read ${fmtMoney(state.cache * p.cache / 1e6)}`;
+  persist();
 }
 
 function readPrices() {
@@ -396,6 +404,7 @@ function renderCompare() {
   for (const b of $('presets').children) {
     b.classList.toggle('active', Number(b.textContent.slice(1)) === budget);
   }
+  persist();
 }
 
 $('cmp-hit-slider').addEventListener('input', e => {
@@ -431,8 +440,64 @@ for (const [tabId, pageId] of tabs) {
       $(t).classList.toggle('active', t === tabId);
       $(p).hidden = t !== tabId;
     }
+    persist();
   });
 }
+
+// ---- persistence: save on every update, restore on load ----
+const STORE_KEY = 'llm-calc-v1';
+function loadSaved() {
+  try {
+    const v = JSON.parse(localStorage.getItem(STORE_KEY));
+    return v && typeof v === 'object' ? v : {};
+  } catch { return {}; }
+}
+function persist() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      tab: $('page-compare').hidden ? 'session' : 'compare',
+      session: { state, prices: readPrices() },
+      compare: {
+        r: cmp.r, h: cmp.h,
+        budget: $('budget-field').value,
+        nameA: $('name-a').value, nameB: $('name-b').value,
+        pa: readPrice3('price-a'), pb: readPrice3('price-b'),
+        multA: $('mult-a').value, multB: $('mult-b').value,
+      },
+    }));
+  } catch {} // storage unavailable (private mode etc.) — calculator keeps working
+}
+
+const saved = loadSaved();
+
+(function restore() {
+  const fin = v => Number.isFinite(v) && v >= 0;
+  const s = saved.session;
+  if (s) {
+    if (s.state && [s.state.fresh, s.state.out, s.state.cache].every(fin)) state = { ...s.state };
+    if (s.prices) {
+      for (const [id, v] of [['price-in', s.prices.in], ['price-out', s.prices.out], ['price-cache', s.prices.cache]]) {
+        if (fin(v)) $(id).value = v;
+      }
+    }
+  }
+  const c = saved.compare;
+  if (c) {
+    if (Number.isFinite(c.r) && c.r > 0) cmp.r = Math.min(Math.max(c.r, RATIO_MIN), RATIO_MAX);
+    if (Number.isFinite(c.h)) cmp.h = Math.min(Math.max(c.h, 0), 1);
+    if (fin(parseFloat(c.budget))) $('budget-field').value = c.budget;
+    if (typeof c.nameA === 'string') $('name-a').value = c.nameA;
+    if (typeof c.nameB === 'string') $('name-b').value = c.nameB;
+    for (const [pre, p] of [['price-a', c.pa], ['price-b', c.pb]]) {
+      if (p) for (const k of ['in', 'out', 'cache']) {
+        if (fin(p[k])) $(pre + '-' + k).value = p[k];
+      }
+    }
+    if (fin(parseFloat(c.multA))) $('mult-a').value = c.multA;
+    if (fin(parseFloat(c.multB))) $('mult-b').value = c.multB;
+  }
+  if (saved.tab === 'compare') $('tab-compare').click();
+})();
 
 render();
 renderCompare();

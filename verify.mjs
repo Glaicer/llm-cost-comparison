@@ -5,7 +5,7 @@ const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 const m = html.match(/\/\/ MATH-BEGIN([\s\S]*?)\/\/ MATH-END/);
 assert.ok(m, 'math block found');
 const api = new Function(
-  m[1] + '; return { total, cacheHitOf, ratioOf, applyTotal, applyRatio, applyCacheHit, costOf, shares, blendedPrice, tokensFor, RATIO_MIN, RATIO_MAX };'
+  m[1] + '; return { total, cacheHitOf, ratioOf, applyTotal, applyRatio, applyCacheHit, costOf, shares, blendedPrice, tokensFor, fromShape, RATIO_MIN, RATIO_MAX };'
 )();
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps * Math.max(1, Math.abs(b)), `${a} ~ ${b}`);
@@ -84,5 +84,12 @@ assert.ok(tokB(0.01) > tokA(0.01), 'output-heavy: cheap output wins');
 
 // Zero prices -> unlimited tokens.
 assert.equal(api.tokensFor(10, api.blendedPrice(api.shares(1, 0.5), { in: 0, out: 0, cache: 0 })), Infinity);
+
+// 7. fromShape: builds a session from (total, ratio, cache hit); inverts the shape getters.
+const sDef = api.fromShape(10e6, 7.5, 0.985);
+near(api.total(sDef), 10e6, 1e-9);
+near(api.ratioOf(sDef), 7.5, 1e-9);
+near(api.cacheHitOf(sDef), 0.985, 1e-9);
+deepNear(api.fromShape(api.total(s0), api.ratioOf(s0), api.cacheHitOf(s0)), s0);
 
 console.log('all math checks passed');
