@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM cost</title>
+<style>
+:root { --bg:#fafafa; --fg:#171717; --muted:#737373; --line:#e5e5e5; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#141414; --fg:#ededed; --muted:#8a8a8a; --line:#2e2e2e; }
+}
+* { box-sizing:border-box; margin:0; }
+body {
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:var(--bg); color:var(--fg);
+  display:flex; justify-content:center; padding:56px 20px;
+  -webkit-font-smoothing:antialiased;
+}
+main { width:100%; max-width:540px; }
+h1 {
+  font-size:11px; font-weight:600; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:40px;
+}
+h2 {
+  font-size:11px; font-weight:600; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:18px;
+}
+section + section { margin-top:40px; }
+.prices { display:flex; gap:20px; }
+.prices .field { flex:1; }
+.label { font-size:11.5px; color:var(--muted); }
+.field .label { display:block; margin-bottom:2px; }
+input[type=number], input[type=text] {
+  font:inherit; font-size:14px; font-variant-numeric:tabular-nums;
+  color:var(--fg); background:transparent; border:0;
+  border-bottom:1px solid var(--line); border-radius:0;
+  width:100%; padding:6px 0; outline:none;
+}
+input:focus { border-bottom-color:var(--fg); }
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+.row { margin-top:30px; }
+.row:first-of-type { margin-top:0; }
+.row-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+.row-head .label { font-size:12.5px; }
+.row-head input { width:150px; text-align:right; border-bottom-color:transparent; }
+.row-head input:hover, .row-head input:focus { border-bottom-color:var(--line); }
+input[type=range] { width:100%; accent-color:var(--fg); margin:0; }
+.derived {
+  margin-top:30px; padding-top:14px; border-top:1px solid var(--line);
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums;
+}
+.amount {
+  font-size:42px; font-weight:600; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; line-height:1.1;
+}
+.breakdown { margin-top:10px; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.tabs { display:flex; gap:22px; border-bottom:1px solid var(--line); margin-bottom:36px; }
+.tab {
+  font:inherit; font-size:12.5px; background:none; border:0;
+  padding:0 2px 10px; color:var(--muted); cursor:pointer;
+  border-bottom:1px solid transparent; margin-bottom:-1px;
+}
+.tab.active { color:var(--fg); font-weight:600; border-bottom-color:var(--fg); }
+.providers { display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+.provider .field + .field { margin-top:14px; }
+.budget-row { display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
+.budget { width:110px; }
+.presets { display:flex; gap:8px; padding-bottom:8px; flex-wrap:wrap; }
+.preset {
+  font:inherit; font-size:12px; background:none; border:1px solid var(--line);
+  border-radius:999px; padding:4px 12px; color:var(--muted); cursor:pointer;
+}
+.preset:hover { border-color:var(--fg); color:var(--fg); }
+.preset.active { background:var(--fg); border-color:var(--fg); color:var(--bg); }
+.ratio-row { margin-top:20px; }
+.results { display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+.result { padding-top:16px; border-top:1px solid var(--line); }
+.result-name { font-size:12.5px; color:var(--muted); }
+.result.winner { border-top-color:var(--fg); }
+.result.winner .result-name { color:var(--fg); font-weight:600; }
+.result-tokens {
+  font-size:28px; font-weight:600; letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums; margin-top:8px;
+}
+.result-sub { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:4px; }
+.verdict { margin-top:26px; font-size:14px; }
+@media (max-width: 560px) { .providers, .results { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>LLM cost</h1>
+  <nav class="tabs">
+    <button class="tab active" id="tab-session" type="button">Session cost</button>
+    <button class="tab" id="tab-compare" type="button">Compare providers</button>
+  </nav>
+
+  <div class="page" id="page-session">
+  <section>
+    <h2>Prices &mdash; $ per 1M tokens</h2>
+    <div class="prices">
+      <div class="field"><span class="label">Input</span><input id="price-in" type="number" min="0" step="0.01" value="3"></div>
+      <div class="field"><span class="label">Output</span><input id="price-out" type="number" min="0" step="0.01" value="15"></div>
+      <div class="field"><span class="label">Cache read</span><input id="price-cache" type="number" min="0" step="0.01" value="0.30"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Session</h2>
+    <div class="row">
+      <div class="row-head"><span class="label">Total tokens</span><input id="total-field" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"></div>
+      <input id="total-slider" type="range" min="4" max="8" step="0.001" aria-label="Total tokens">
+    </div>
+    <div class="row">
+      <div class="row-head"><span class="label">Input : output ratio</span><input id="ratio-field" type="number" min="0" max="1000" step="0.01"></div>
+      <input id="ratio-slider" type="range" min="-2" max="3" step="0.001" aria-label="Input to output ratio">
+    </div>
+    <div class="row">
+      <div class="row-head"><span class="label">Cache hit %</span><input id="hit-field" type="number" min="0" max="100" step="0.1"></div>
+      <input id="hit-slider" type="range" min="0" max="100" step="0.1" aria-label="Cache hit percent">
+    </div>
+    <div class="derived" id="derived"></div>
+  </section>
+
+  <section>
+    <h2>Total cost</h2>
+    <div class="amount" id="amount"></div>
+    <div class="breakdown" id="breakdown"></div>
+  </section>
+  </div>
+
+  <div class="page" id="page-compare" hidden>
+    <section>
+      <h2>Providers</h2>
+      <div class="providers">
+        <div class="provider">
+          <div class="field"><span class="label">Name</span><input id="name-a" type="text" value="Alpha" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><span class="label">Input</span><input id="price-a-in" type="number" min="0" step="0.01" value="3"></div>
+          <div class="field"><span class="label">Output</span><input id="price-a-out" type="number" min="0" step="0.01" value="15"></div>
+          <div class="field"><span class="label">Cache read</span><input id="price-a-cache" type="number" min="0" step="0.01" value="0.30"></div>
+        </div>
+        <div class="provider">
+          <div class="field"><span class="label">Name</span><input id="name-b" type="text" value="Beta" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><span class="label">Input</span><input id="price-b-in" type="number" min="0" step="0.01" value="2.50"></div>
+          <div class="field"><span class="label">Output</span><input id="price-b-out" type="number" min="0" step="0.01" value="10"></div>
+          <div class="field"><span class="label">Cache read</span><input id="price-b-cache" type="number" min="0" step="0.01" value="0.10"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Budget</h2>
+      <div class="budget-row">
+        <div class="field budget"><span class="label">Amount ($)</span><input id="budget-field" type="number" min="0" step="1" value="10"></div>
+        <div class="presets" id="presets"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Session shape</h2>
+      <div class="row">
+        <div class="row-head"><span class="label">Cache hit %</span><input id="cmp-hit-field" type="number" min="0" max="100" step="0.1"></div>
+        <input id="cmp-hit-slider" type="range" min="0" max="100" step="0.1" aria-label="Cache hit percent">
+      </div>
+      <div class="row ratio-row">
+        <div class="row-head"><span class="label">Input : output ratio</span><input id="cmp-ratio-field" type="number" min="0" max="1000" step="0.01"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Tokens for the budget</h2>
+      <div class="results">
+        <div class="result" id="card-a">
+          <div class="result-name" id="result-name-a"></div>
+          <div class="result-tokens" id="tokens-a"></div>
+          <div class="result-sub" id="sub-a"></div>
+        </div>
+        <div class="result" id="card-b">
+          <div class="result-name" id="result-name-b"></div>
+          <div class="result-tokens" id="tokens-b"></div>
+          <div class="result-sub" id="sub-b"></div>
+        </div>
+      </div>
+      <div class="verdict" id="verdict"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+// MATH-BEGIN
+const RATIO_MIN = 0.01, RATIO_MAX = 1000;
+const T_MIN = 1e4, T_MAX = 1e8;
+
+const total = s => s.fresh + s.out + s.cache;
+const cacheHitOf = s => { const side = s.fresh + s.cache; return side > 0 ? s.cache / side : 0; };
+const ratioOf = s => s.out > 1e-9 ? s.fresh / s.out : RATIO_MAX;
+
+// Drag total: scale the whole session proportionally.
+function applyTotal(s, T) {
+  const f = T / total(s);
+  return { fresh: s.fresh * f, out: s.out * f, cache: s.cache * f };
+}
+
+// Drag ratio: hold total + cache hit; reshape the input/output split.
+function applyRatio(s, r) {
+  const T = total(s), h = cacheHitOf(s);
+  const denom = r + 1 - h;
+  const out = denom > 1e-12 ? T * (1 - h) / denom : T;
+  const side = T - out;
+  return { fresh: side * (1 - h), out, cache: side * h };
+}
+
+// Drag cache hit: hold total + output; freed cache tokens all go to input,
+// then the ratio is recalculated from the new state.
+function applyCacheHit(s, h) {
+  const T = total(s), side = T - s.out;
+  return { fresh: side * (1 - h), out: s.out, cache: side * h };
+}
+
+const costOf = (s, p) => (s.fresh * p.in + s.out * p.out + s.cache * p.cache) / 1e6;
+
+// Compare tab: token shares of a shape (r = fresh:output, h = cache hit over input side).
+function shares(r, h) {
+  const d = r + 1 - h;
+  return { fresh: r * (1 - h) / d, out: (1 - h) / d, cache: r * h / d };
+}
+const blendedPrice = (w, p) => w.fresh * p.in + w.out * p.out + w.cache * p.cache; // $ per 1M tokens
+const tokensFor = (budget, blended) => blended > 0 ? budget * 1e6 / blended : Infinity;
+// MATH-END
+
+const $ = id => document.getElementById(id);
+const fmtInt = v => Math.round(v).toLocaleString('en-US');
+const fmtRatio = r => r < 0.005 ? '0' : r.toLocaleString('en-US', { maximumFractionDigits: 2 });
+function fmtMoney(v) {
+  if (v >= 0.01) return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (v >= 1e-4) return '$' + v.toFixed(4);
+  return '$' + v.toExponential(2);
+}
+
+let state = { fresh: 136074, out: 20595, cache: 6379136 };
+
+function render() {
+  const T = total(state), h = cacheHitOf(state), r = ratioOf(state);
+  const active = document.activeElement;
+  const set = (el, v) => { if (el !== active) el.value = v; };
+  set($('total-slider'), Math.log10(Math.min(Math.max(T, T_MIN), T_MAX)));
+  set($('ratio-slider'), Math.log10(Math.min(Math.max(r, RATIO_MIN), RATIO_MAX)));
+  set($('hit-slider'), h * 100);
+  set($('total-field'), fmtInt(T));
+  set($('ratio-field'), fmtRatio(Math.min(r, RATIO_MAX)));
+  set($('hit-field'), (h * 100).toFixed(1));
+  $('derived').textContent =
+    `input ${fmtInt(state.fresh)} \u00b7 output ${fmtInt(state.out)} \u00b7 cache read ${fmtInt(state.cache)}`;
+  const p = readPrices();
+  $('amount').textContent = fmtMoney(costOf(state, p));
+  $('breakdown').textContent =
+    `input ${fmtMoney(state.fresh * p.in / 1e6)} \u00b7 output ${fmtMoney(state.out * p.out / 1e6)} \u00b7 cache read ${fmtMoney(state.cache * p.cache / 1e6)}`;
+}
+
+function readPrices() {
+  const num = id => {
+    const v = parseFloat($(id).value);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  return { in: num('price-in'), out: num('price-out'), cache: num('price-cache') };
+}
+
+$('total-slider').addEventListener('input', e => {
+  state = applyTotal(state, 10 ** parseFloat(e.target.value));
+  render();
+});
+$('ratio-slider').addEventListener('input', e => {
+  state = applyRatio(state, 10 ** parseFloat(e.target.value));
+  render();
+});
+$('hit-slider').addEventListener('input', e => {
+  state = applyCacheHit(state, parseFloat(e.target.value) / 100);
+  render();
+});
+$('total-field').addEventListener('input', e => {
+  const v = parseFloat(e.target.value.replace(/[^\d.]/g, ''));
+  if (Number.isFinite(v) && v >= T_MIN) {
+    state = applyTotal(state, Math.min(v, T_MAX));
+    render();
+  }
+});
+$('ratio-field').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  if (Number.isFinite(v) && v >= RATIO_MIN) {
+    state = applyRatio(state, Math.min(v, RATIO_MAX));
+    render();
+  }
+});
+$('hit-field').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  if (Number.isFinite(v)) {
+    state = applyCacheHit(state, Math.min(Math.max(v, 0), 100) / 100);
+    render();
+  }
+});
+$('price-in').addEventListener('input', render);
+$('price-out').addEventListener('input', render);
+$('price-cache').addEventListener('input', render);
+// Reformat typed values (e.g. add thousands separators) once editing ends.
+for (const id of ['total-field', 'ratio-field', 'hit-field']) {
+  $(id).addEventListener('change', render);
+}
+
+// ---- Compare providers tab ----
+const esc = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtMult = m => {
+  const s = m >= 99.95 ? m.toFixed(0) : m >= 9.995 ? m.toFixed(1) : m.toFixed(2);
+  return s.replace(/\.?0+$/, '') + '\u00d7';
+};
+const fmtTokens = t => {
+  if (!isFinite(t)) return '\u221e';
+  if (t >= 1e6) { const v = t / 1e6; return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + 'M'; }
+  if (t >= 1e3) { const v = t / 1e3; return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + 'K'; }
+  return String(Math.round(t));
+};
+
+const PRESETS = [1, 5, 10, 25, 50, 100];
+for (const v of PRESETS) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'preset';
+  b.textContent = '$' + v;
+  b.addEventListener('click', () => { $('budget-field').value = v; renderCompare(); });
+  $('presets').appendChild(b);
+}
+
+// Session shape defaults: the example session's exact ratio and cache hit.
+let cmp = { r: 136074 / 20595, h: 6379136 / 6515210 };
+
+function readPrice3(prefix) {
+  const num = id => {
+    const v = parseFloat($(id).value);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  return { in: num(prefix + '-in'), out: num(prefix + '-out'), cache: num(prefix + '-cache') };
+}
+
+function renderCompare() {
+  const active = document.activeElement;
+  const set = (el, v) => { if (el !== active) el.value = v; };
+  set($('cmp-hit-slider'), cmp.h * 100);
+  set($('cmp-hit-field'), (cmp.h * 100).toFixed(1));
+  set($('cmp-ratio-field'), fmtRatio(Math.min(cmp.r, RATIO_MAX)));
+
+  const w = shares(cmp.r, cmp.h);
+  const budget = Math.max(0, parseFloat($('budget-field').value) || 0);
+  const pa = readPrice3('price-a'), pb = readPrice3('price-b');
+  const nameA = $('name-a').value.trim() || 'Provider A';
+  const nameB = $('name-b').value.trim() || 'Provider B';
+  const ta = tokensFor(budget, blendedPrice(w, pa));
+  const tb = tokensFor(budget, blendedPrice(w, pb));
+
+  $('result-name-a').textContent = nameA;
+  $('result-name-b').textContent = nameB;
+  $('tokens-a').textContent = fmtTokens(ta) + ' tokens';
+  $('tokens-b').textContent = fmtTokens(tb) + ' tokens';
+  $('sub-a').textContent = Number.isFinite(ta) ? `${fmtInt(ta)} tokens \u00b7 \u2248${fmtMoney(blendedPrice(w, pa))}/1M` : 'prices are 0';
+  $('sub-b').textContent = Number.isFinite(tb) ? `${fmtInt(tb)} tokens \u00b7 \u2248${fmtMoney(blendedPrice(w, pb))}/1M` : 'prices are 0';
+
+  $('card-a').classList.toggle('winner', ta > tb);
+  $('card-b').classList.toggle('winner', tb > ta);
+  const m = Math.max(ta, tb) / Math.min(ta, tb);
+  const even = (!isFinite(ta) && !isFinite(tb)) || !(m >= 1.005);
+  if (even) {
+    $('verdict').textContent = 'Even \u2014 both give the same tokens per dollar';
+  } else if (ta > tb) {
+    $('verdict').innerHTML = `<strong>${esc(nameA)}</strong> \u2014 ${isFinite(m) ? fmtMult(m) : '\u221e'} the tokens of ${esc(nameB)}`;
+  } else {
+    $('verdict').innerHTML = `<strong>${esc(nameB)}</strong> \u2014 ${isFinite(m) ? fmtMult(m) : '\u221e'} the tokens of ${esc(nameA)}`;
+  }
+
+  for (const b of $('presets').children) {
+    b.classList.toggle('active', Number(b.textContent.slice(1)) === budget);
+  }
+}
+
+$('cmp-hit-slider').addEventListener('input', e => {
+  cmp.h = parseFloat(e.target.value) / 100;
+  renderCompare();
+});
+$('cmp-hit-field').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  if (Number.isFinite(v)) {
+    cmp.h = Math.min(Math.max(v, 0), 100) / 100;
+    renderCompare();
+  }
+});
+$('cmp-ratio-field').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  if (Number.isFinite(v) && v >= RATIO_MIN) {
+    cmp.r = Math.min(v, RATIO_MAX);
+    renderCompare();
+  }
+});
+for (const id of ['name-a', 'name-b', 'budget-field', 'price-a-in', 'price-a-out', 'price-a-cache',
+  'price-b-in', 'price-b-out', 'price-b-cache']) {
+  $(id).addEventListener('input', renderCompare);
+}
+for (const id of ['cmp-hit-field', 'cmp-ratio-field', 'budget-field']) {
+  $(id).addEventListener('change', renderCompare);
+}
+
+const tabs = [['tab-session', 'page-session'], ['tab-compare', 'page-compare']];
+for (const [tabId, pageId] of tabs) {
+  $(tabId).addEventListener('click', () => {
+    for (const [t, p] of tabs) {
+      $(t).classList.toggle('active', t === tabId);
+      $(p).hidden = t !== tabId;
+    }
+  });
+}
+
+render();
+renderCompare();
+</script>
+</body>
+</html>
