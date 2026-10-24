@@ -1,45 +1,21 @@
 # llm-cost-comparison
 
-> Got a $2.63 API bill with a 97.9% cache hit rate, so obviously I built an entire tool about it instead of just... paying.
+A small calculator for what an LLM API session costs, including cache pricing and subscription credits, plus a side-by-side comparison of two providers. The whole app is one `index.html` file: no build step, no dependencies, no network calls.
 
-## The meme
+Live copy: [glaicer.github.io/llm-cost-comparison](https://glaicer.github.io/llm-cost-comparison/)
 
-Nobody:
-Absolutely nobody:
-My coding session: re-reads your entire codebase from cache 6,379,136 times and bills you $0.30/M for the privilege
+## Why it exists
 
----
+A coding session of mine billed 6.5M tokens for $2.63: 97.9% of the input side was cache reads, at $0.30 per 1M tokens against $3.00 for fresh input (output was $15.00). Fine bill, interesting math. The follow-up questions were harder to answer from a pricing page: what does that session cost at a 50% cache hit, and which provider gives more tokens per dollar once a subscription turns $10 into $30 of credits? This page answers both with sliders.
 
-🚫 Reading model pricing docs at 2am
-😎 Dragging a slider until "Alpha — 10.2× the tokens of Beta"
+## Session cost tab
 
----
+Enter the provider's prices: input, output, and cache read, in $ per 1M tokens. Then shape the session with three sliders, each with a field for exact values: total tokens (10K to 100M, log scale), input:output ratio, and cache hit rate. The total updates while you drag, with a breakdown of what each bucket costs.
 
-🧠 Reading the pricing page
-🧠✨ Estimating what a session costs
-🧠✨🌟 Simulating "what if my cache hit drops to 50%"
-🧠✨🌟🌌 Subscriptions: pay $10, get $30 credits, watch Beta overtake Alpha mid-drag
+Each drag preserves what you are not touching. Dragging total tokens scales the whole session. Dragging the ratio keeps the total and the cache hit, and reshapes input against output. Dragging the cache hit keeps output fixed and moves the freed cache tokens into fresh input, which is why the cost climbs quickly when the rate drops.
 
----
+## Compare providers tab
 
-Fresh input: $3/M. Cache read: $0.30/M.
-My trust issues, but as a billing model.
+Two providers side by side, each with its own three prices. Set a monthly budget (presets from $1 to $100) and, where a provider has a subscription, a credit multiplier: paying $10 and receiving $30 in credits is 3×. Both providers are priced on the same session shape, and the tab shows how many tokens the budget buys from each, the blended $ per 1M, and a verdict naming the winner and its factor.
 
-## What it actually does (sober version)
-
-- **Session cost tab** — paste input / output / cache-read prices ($ per 1M tokens), shape a session with sliders (total tokens, input:output ratio, cache hit %), watch the damage update live. Lower the cache hit and watch every freed token crawl back into the input bill, exactly like in real life.
-- **Compare providers tab** — two providers side by side, your monthly payment, subscription credit multipliers (pay $10 → $30 credits = 3×), same session shape — and a verdict: who gives you more tokens, and how many times more.
-
-Everything persists to `localStorage`. Reloading is safe. Your spreadsheet of regrets is saved.
-
-## Usage
-
-Open `index.html` in a browser. That's it — no build step, no dependencies, no npm install, no trauma.
-
-## Tests
-
-```bash
-node verify.mjs
-```
-
-The math is pure and verified: sliders are path-independent, cache-hit drops push tokens into input (never output), and the comparison logic flips exactly when it should.
+Everything you enter on either tab is saved to localStorage and restored on the next visit.
